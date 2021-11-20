@@ -13,11 +13,32 @@ Plug 'nvim-telescope/telescope.nvim'
 
 call plug#end()
 
-filetype plugin indent on
+colorscheme peachpuff
+
+set tabstop=8 softtabstop=0 shiftwidth=4 smarttab smartindent
+
+" by default, use spaced tabs
 set expandtab
-set shiftwidth=2
-set tabstop=2
-" set textwidth=80
+
+" see https://unix.stackexchange.com/questions/63196/in-vim-how-can-i-automatically-determine-whether-to-use-spaces-or-tabs-for-inde
+function TabsOrSpaces()
+    " Determines whether to use spaces or tabs on the current buffer.
+    if getfsize(bufname("%")) > 256000
+        " File is very large, just use the default.
+        return
+    endif
+
+    let numTabs=len(filter(getbufline(bufname("%"), 1, 250), 'v:val =~ "^\\t"'))
+    let numSpaces=len(filter(getbufline(bufname("%"), 1, 250), 'v:val =~ "^ "'))
+
+    if numTabs > numSpaces
+        setlocal noexpandtab
+    endif
+endfunction
+
+" Call the function after opening a buffer to determine whether to use tabs or
+" spaces
+autocmd BufReadPost * call TabsOrSpaces()
 
 lua << EOF
 local nvim_lsp = require('lspconfig')
@@ -61,6 +82,7 @@ local on_attach = function(client, bufnr)
   buf_set_keymap('n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
 
   buf_set_keymap('n', '<space>sd', '<cmd>lua require\'telescope.builtin\'.lsp_document_symbols()<CR>', opts)
+  buf_set_keymap('n', '<space>sw', '<cmd>lua require\'telescope.builtin\'.lsp_dynamic_workspace_symbols()<CR>', opts)
 
   -- Set nvim complete options
   vim.o.completeopt = "menuone,noselect"
@@ -80,7 +102,7 @@ capabilities.textDocument.completion.completionItem.resolveSupport = {
 
 -- Use a loop to conveniently call 'setup' on multiple servers and
 -- map buffer local keybindings when the language server attaches
-local servers = { 'bashls', 'clangd', 'ocamlls', 'pyright', 'rust_analyzer', 'tsserver', 'vala_ls', 'vimls' }
+local servers = { 'bashls', 'clangd', 'ocamlls', 'pyright', 'rust_analyzer', 'tsserver', 'vimls' }
 for _, lsp in ipairs(servers) do
   nvim_lsp[lsp].setup {
     on_attach = on_attach,
@@ -91,6 +113,15 @@ for _, lsp in ipairs(servers) do
   }
 end
 
+require 'lspconfig'.vala_ls.setup {
+  cmd = { 'env', 'G_MESSAGES_DEBUG=all', 'vala-language-server'},
+  on_attach = on_attach,
+  flags = {
+    debounce_text_changes = 150,
+  },
+  capabilities = capabilities
+}
+
 require'lspconfig'.jsonls.setup {
   cmd = { 'vscode-json-languageserver', '--stdio' },
   on_attach = on_attach,
@@ -98,6 +129,37 @@ require'lspconfig'.jsonls.setup {
     debounce_text_changes = 150,
   },
   capabilities = capabilities
+}
+
+-- for sumneko_lua
+local runtime_path = vim.split(package.path, ';')
+table.insert(runtime_path, "lua/?.lua")
+table.insert(runtime_path, "lua/?/init.lua")
+
+require'lspconfig'.sumneko_lua.setup {
+  cmd = {'lua-language-server'};
+  settings = {
+    Lua = {
+      runtime = {
+        -- Tell the language server which version of Lua you're using (most likely LuaJIT in the case of Neovim)
+        version = 'LuaJIT',
+        -- Setup your lua path
+        path = runtime_path,
+      },
+      diagnostics = {
+        -- Get the language server to recognize the `vim` global
+        globals = {'vim'},
+      },
+      workspace = {
+        -- Make the server aware of Neovim runtime files
+        library = vim.api.nvim_get_runtime_file("", true),
+      },
+      -- Do not send telemetry data containing a randomized but unique identifier
+      telemetry = {
+        enable = false,
+      },
+    },
+  },
 }
 
 require'compe'.setup {
@@ -153,6 +215,16 @@ require'nvim-treesitter.configs'.setup {
 }
 
 require'telescope'.setup {
+}
+
+local parser_config = require "nvim-treesitter.parsers".get_parser_configs()
+parser_config.vala = {
+  install_info = {
+    url = "~/dev/tree-sitter-vala", -- local path or git repo
+    files = {"src/parser.c"}
+  },
+  filetype = "vala", -- if filetype does not agree with parser name
+  used_by = {"vapi"} -- additional filetypes that use this parser
 }
 EOF
 
